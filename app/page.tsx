@@ -467,77 +467,86 @@ export default function Home() {
         <div className="grid min-h-0 flex-1 gap-5 md:grid-cols-[minmax(0,1fr)_340px] md:gap-8">
           {/* Left — checkout flow */}
           <section className="mx-auto flex min-h-0 w-full max-w-xl flex-col justify-center md:h-full">
-            {!code ? (
-              <Section className="animate-fade-up flex min-h-0 flex-col md:flex-1">
-                <h2 className="mb-4 shrink-0 text-lg font-bold">Scan a coupon</h2>
-                <div className="relative aspect-square min-h-0 w-full overflow-hidden rounded-2xl bg-black md:aspect-auto md:flex-1">
-                  <Scanner
-                    onScan={handleScan}
-                    onError={handleScanError}
-                    constraints={{ facingMode: "environment" }}
-                    components={{ finder: false, torch: true }}
-                    classNames={{
-                      container: "h-full w-full",
-                      video: "h-full w-full object-cover",
-                    }}
-                  >
-                    <div className="pointer-events-none absolute inset-3">
-                      <div className="absolute left-0 top-0 h-10 w-10 rounded-tl-2xl border-l-2 border-t-2 border-white/80" />
-                      <div className="absolute right-0 top-0 h-10 w-10 rounded-tr-2xl border-r-2 border-t-2 border-white/80" />
-                      <div className="absolute bottom-0 left-0 h-10 w-10 rounded-bl-2xl border-b-2 border-l-2 border-white/80" />
-                      <div className="absolute bottom-0 right-0 h-10 w-10 rounded-br-2xl border-b-2 border-r-2 border-white/80" />
-                    </div>
-                    <div className="pointer-events-none absolute inset-x-0">
-                      <span className="scan-line" />
-                    </div>
-                  </Scanner>
-                </div>
-
-                {checking && (
-                  <p className="mt-4 shrink-0 text-sm font-medium text-foreground/60">
-                    Checking coupon…
-                  </p>
-                )}
-                {error && !checking && (
-                  <div className="mt-4 shrink-0">
-                    <Alert tone="error">{error}</Alert>
+            {/*
+              The Scanner is kept mounted at all times (never unmounted) so the
+              camera getUserMedia stream is not torn down and re-acquired when
+              navigating between the scanner and the coupon form. When a coupon
+              is applied (code set) we only hide this panel with CSS.
+            */}
+            <Section
+              className={`flex min-h-0 flex-col md:flex-1 ${
+                code ? "hidden" : "animate-fade-up"
+              }`}
+            >
+              <h2 className="mb-4 shrink-0 text-lg font-bold">Scan a coupon</h2>
+              <div className="relative aspect-square min-h-0 w-full overflow-hidden rounded-2xl bg-black md:aspect-auto md:flex-1">
+                <Scanner
+                  onScan={handleScan}
+                  onError={handleScanError}
+                  constraints={{ facingMode: "environment" }}
+                  components={{ finder: false, torch: true }}
+                  classNames={{
+                    container: "h-full w-full",
+                    video: "h-full w-full object-cover",
+                  }}
+                >
+                  <div className="pointer-events-none absolute inset-3">
+                    <div className="absolute left-0 top-0 h-10 w-10 rounded-tl-2xl border-l-2 border-t-2 border-white/80" />
+                    <div className="absolute right-0 top-0 h-10 w-10 rounded-tr-2xl border-r-2 border-t-2 border-white/80" />
+                    <div className="absolute bottom-0 left-0 h-10 w-10 rounded-bl-2xl border-b-2 border-l-2 border-white/80" />
+                    <div className="absolute bottom-0 right-0 h-10 w-10 rounded-br-2xl border-b-2 border-r-2 border-white/80" />
                   </div>
-                )}
+                  <div className="pointer-events-none absolute inset-x-0">
+                    <span className="scan-line" />
+                  </div>
+                </Scanner>
+              </div>
 
-                <div className="mt-5 shrink-0 border-t border-black/10 pt-5">
-                  <button
-                    type="button"
-                    onClick={() => setManualMode((m) => !m)}
-                    className="text-sm font-semibold text-brand-600 underline-offset-4 transition hover:underline focus:outline-none focus:ring-2 focus:ring-brand-500/40 rounded"
-                  >
-                    {manualMode ? "Hide manual entry" : "Enter the code manually"}
-                  </button>
+              {checking && (
+                <p className="mt-4 shrink-0 text-sm font-medium text-foreground/60">
+                  Checking coupon…
+                </p>
+              )}
+              {error && !checking && (
+                <div className="mt-4 shrink-0">
+                  <Alert tone="error">{error}</Alert>
+                </div>
+              )}
 
-                  {manualMode && (
-                    <form onSubmit={handleManualSubmit} className="mt-3 flex animate-fade-in gap-2">
-                      <input
-                        value={manualCode}
-                        onChange={(e) =>
-                          setManualCode(e.target.value.toUpperCase().slice(0, 10))
-                        }
-                        placeholder="AB12CD34EF"
-                        maxLength={10}
-                        autoFocus
-                        aria-label="Coupon code"
-                        className="h-11 w-full rounded-xl border border-black/10 bg-white px-4 font-mono text-sm font-bold uppercase tracking-widest text-foreground outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30"
-                      />
-                      <button
-                        type="submit"
-                        disabled={manualCode.length !== 10}
-                        className="shrink-0 rounded-xl bg-brand-500 px-5 text-sm font-bold text-white shadow-md shadow-brand-500/30 transition-all duration-200 hover:-translate-y-0.5 hover:bg-brand-600 hover:shadow-lg active:translate-y-0 focus:outline-none focus:ring-2 focus:ring-brand-500/50 disabled:opacity-40"
-                      >
-                        Check
-                      </button>
-                    </form>
+              <div className="mt-5 shrink-0 border-t border-black/10 pt-5">
+                <button
+                  type="button"
+                  onClick={() => setManualMode((m) => !m)}
+                  className="text-sm font-semibold text-brand-600 underline-offset-4 transition hover:underline focus:outline-none focus:ring-2 focus:ring-brand-500/40 rounded"
+                >
+                  {manualMode ? "Hide manual entry" : "Enter the code manually"}
+                </button>
+
+                {manualMode && (
+                  <form onSubmit={handleManualSubmit} className="mt-3 flex animate-fade-in gap-2">
+                    <input
+                      value={manualCode}
+                      onChange={(e) =>
+                        setManualCode(e.target.value.toUpperCase().slice(0, 10))
+                      }
+                      placeholder="AB12CD34EF"
+                      maxLength={10}
+                      autoFocus
+                      aria-label="Coupon code"
+                      className="h-11 w-full rounded-xl border border-black/10 bg-white px-4 font-mono text-sm font-bold uppercase tracking-widest text-foreground outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30"
+                    />
+                    <button
+                      type="submit"
+                      disabled={manualCode.length !== 10}
+                      className="shrink-0 rounded-xl bg-brand-500 px-5 text-sm font-bold text-white shadow-md shadow-brand-500/30 transition-all duration-200 hover:-translate-y-0.5 hover:bg-brand-600 hover:shadow-lg active:translate-y-0 focus:outline-none focus:ring-2 focus:ring-brand-500/50 disabled:opacity-40"
+                    >
+                      Check
+                    </button>
+                  </form>
                   )}
                 </div>
               </Section>
-            ) : (
+            {code && (
               <div className="flex animate-fade-up flex-col gap-5">
                 <Section className="transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md">
                   <div className="flex items-center justify-between gap-3">
