@@ -6,7 +6,11 @@ import { Scanner } from "@yudiel/react-qr-scanner";
 
 const QR_PATTERN = /^[a-zA-Z0-9]{10}$/;
 const HISTORY_PAGE_SIZE = 6;
-const DISCOUNT_OPTIONS = [7, 10] as const;
+const DISCOUNT_OPTIONS = [
+  { value: "all" as const, label: "All" },
+  { value: 7 as const, label: "7%" },
+  { value: 10 as const, label: "10%" },
+];
 
 const inr = (value: number) =>
   new Intl.NumberFormat("en-IN", {
@@ -44,12 +48,64 @@ function Alert({
   children: React.ReactNode;
 }) {
   const styles = {
-    error: "border-red-200 bg-red-50 text-red-600",
-    info: "border-amber-200 bg-amber-50 text-amber-700",
+    error: "border-danger/30 bg-danger/10 text-danger-600",
+    info: "border-info/30 bg-info/10 text-info-600",
   } as const;
   return (
     <div role="alert" className={`rounded-xl border px-4 py-3 text-sm ${styles[tone]}`}>
       {children}
+    </div>
+  );
+}
+
+function DiscountSlider({
+  value,
+  onChange,
+}: {
+  value: number | "all";
+  onChange: (v: number | "all") => void;
+}) {
+  const index = Math.max(
+    0,
+    DISCOUNT_OPTIONS.findIndex((o) => o.value === value)
+  );
+  const trackPadding = 4;
+  const unit = `((100% - ${trackPadding * 2}px) / ${DISCOUNT_OPTIONS.length})`;
+
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Filter by discount"
+      className="relative grid grid-cols-3 rounded-xl border border-brand-500/20 bg-brand-500/10 p-1"
+    >
+      <span
+        aria-hidden
+        className="absolute inset-y-1 rounded-lg border border-black/5 bg-white shadow-sm will-change-[left,width]"
+        style={{
+          width: `calc(${unit})`,
+          left: `calc(${trackPadding}px + ${index} * ${unit})`,
+          transition: "left 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)",
+        }}
+      />
+      {DISCOUNT_OPTIONS.map((o) => {
+        const active = value === o.value;
+        return (
+          <button
+            key={String(o.value)}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(o.value)}
+            className={`relative z-10 rounded-lg py-1.5 text-sm font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 ${
+              active
+                ? "text-brand-600"
+                : "text-foreground/50 hover:text-foreground"
+            }`}
+          >
+            {o.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -136,48 +192,15 @@ function HistoryPanel({
         </div>
       </div>
 
-      {/* Discount filter: 7% / 10% */}
-      <div
-        role="group"
-        aria-label="Filter by discount"
-        className="mb-4 grid grid-cols-3 gap-1 rounded-xl border border-black/10 bg-black/5 p-1"
-      >
-        <button
-          type="button"
-          aria-pressed={discountFilter === "all"}
-          onClick={() => {
-            setDiscountFilter("all");
+      {/* Discount filter: sliding toggle (All / 7% / 10%) */}
+      <div className="mb-4">
+        <DiscountSlider
+          value={discountFilter}
+          onChange={(v) => {
+            setDiscountFilter(v);
             resetPage();
           }}
-          className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-brand-500/40 ${
-            discountFilter === "all"
-              ? "bg-white text-brand-600 shadow-sm"
-              : "text-foreground/60 hover:text-foreground"
-          }`}
-        >
-          All
-        </button>
-        {DISCOUNT_OPTIONS.map((d) => {
-          const active = discountFilter === d;
-          return (
-            <button
-              key={d}
-              type="button"
-              aria-pressed={active}
-              onClick={() => {
-                setDiscountFilter(d);
-                resetPage();
-              }}
-              className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-brand-500/40 ${
-                active
-                  ? "bg-white text-brand-600 shadow-sm"
-                  : "text-foreground/60 hover:text-foreground"
-              }`}
-            >
-              {d}%
-            </button>
-          );
-        })}
+        />
       </div>
 
       {/* List */}
@@ -185,7 +208,7 @@ function HistoryPanel({
         {loading ? (
           <div className="flex flex-col gap-2.5">
             {[0, 1, 2].map((i) => (
-              <div key={i} className="h-14 w-full animate-pulse rounded-xl bg-black/5" />
+              <div key={i} className="skeleton h-14 w-full rounded-xl" />
             ))}
           </div>
         ) : history.length === 0 ? (
@@ -201,10 +224,11 @@ function HistoryPanel({
           </p>
         ) : (
           <ul className="flex flex-col gap-2.5">
-            {visible.map((entry) => (
+            {visible.map((entry, i) => (
               <li
                 key={entry.coupon_code}
-                className="flex items-center justify-between gap-3 rounded-xl border border-black/5 bg-white p-3.5 shadow-sm"
+                style={{ animationDelay: `${Math.min(i, 6) * 45}ms` }}
+                className="animate-fade-up flex items-center justify-between gap-3 rounded-xl border border-black/5 bg-white p-3.5 shadow-sm transition-shadow duration-300 hover:shadow-md"
               >
                 <div className="min-w-0">
                   <p className="truncate font-mono text-sm font-bold tracking-wide text-foreground">
@@ -444,7 +468,7 @@ export default function Home() {
           {/* Left — checkout flow */}
           <section className="mx-auto flex min-h-0 w-full max-w-xl flex-col justify-center md:h-full">
             {!code ? (
-              <Section className="flex min-h-0 flex-col md:flex-1">
+              <Section className="animate-fade-up flex min-h-0 flex-col md:flex-1">
                 <h2 className="mb-4 shrink-0 text-lg font-bold">Scan a coupon</h2>
                 <div className="relative aspect-square min-h-0 w-full overflow-hidden rounded-2xl bg-black md:aspect-auto md:flex-1">
                   <Scanner
@@ -490,7 +514,7 @@ export default function Home() {
                   </button>
 
                   {manualMode && (
-                    <form onSubmit={handleManualSubmit} className="mt-3 flex gap-2">
+                    <form onSubmit={handleManualSubmit} className="mt-3 flex animate-fade-in gap-2">
                       <input
                         value={manualCode}
                         onChange={(e) =>
@@ -505,7 +529,7 @@ export default function Home() {
                       <button
                         type="submit"
                         disabled={manualCode.length !== 10}
-                        className="shrink-0 rounded-xl bg-brand-500 px-5 text-sm font-bold text-white transition hover:bg-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-500/50 disabled:opacity-40"
+                        className="shrink-0 rounded-xl bg-brand-500 px-5 text-sm font-bold text-white shadow-md shadow-brand-500/30 transition-all duration-200 hover:-translate-y-0.5 hover:bg-brand-600 hover:shadow-lg active:translate-y-0 focus:outline-none focus:ring-2 focus:ring-brand-500/50 disabled:opacity-40"
                       >
                         Check
                       </button>
@@ -514,8 +538,8 @@ export default function Home() {
                 </div>
               </Section>
             ) : (
-              <div className="flex flex-col gap-5">
-                <Section>
+              <div className="flex animate-fade-up flex-col gap-5">
+                <Section className="transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-xs font-medium text-foreground/50">Coupon code</p>
                     {discountPercent !== null && (
@@ -532,7 +556,7 @@ export default function Home() {
                   </p>
                 </Section>
 
-                <Section>
+                <Section className="animate-fade-up transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md">
                   <label
                     htmlFor="order-amount"
                     className="mb-2 block text-sm font-semibold"
@@ -564,14 +588,14 @@ export default function Home() {
                     type="button"
                     onClick={applyDiscount}
                     disabled={applying || !amount}
-                    className="mt-4 flex h-12 w-full items-center justify-center rounded-xl bg-brand-500 text-base font-bold text-white transition hover:bg-brand-600 active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-brand-500/50 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="mt-4 flex h-12 w-full items-center justify-center rounded-xl bg-brand-500 text-base font-bold text-white shadow-lg shadow-brand-500/30 transition-all duration-200 hover:-translate-y-0.5 hover:bg-brand-600 hover:shadow-xl hover:shadow-brand-500/40 active:translate-y-0 active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-brand-500/50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {applying ? "Applying discount…" : "Apply discount"}
                   </button>
 
                   {discountedAmount !== null && discountPercent !== null && (
-                    <div className="mt-5 rounded-xl border border-brand-500/30 bg-brand-500/5 p-5 text-center">
-                      <p className="text-xs font-bold uppercase tracking-widest text-brand-600">
+                    <div className="mt-5 animate-pop rounded-xl border border-success/30 bg-success/10 p-5 text-center">
+                      <p className="text-xs font-bold uppercase tracking-widest text-success-600">
                         {discountPercent}% discount applied
                       </p>
                       <p className="mt-2 text-4xl font-extrabold tracking-tight text-foreground">
@@ -583,7 +607,7 @@ export default function Home() {
                         </span>{" "}
                         → <span className="font-semibold text-foreground">{inr(discountedAmount)}</span>
                       </div>
-                      <p className="mt-3 inline-block rounded-full bg-brand-500/15 px-3 py-1 text-xs font-bold text-brand-600">
+                      <p className="mt-3 inline-block rounded-full bg-success/15 px-3 py-1 text-xs font-bold text-success-600">
                         You saved {inr(saved)}
                       </p>
                     </div>
@@ -598,7 +622,7 @@ export default function Home() {
                   <button
                     type="button"
                     onClick={reset}
-                    className="mt-5 h-11 w-full rounded-xl border border-black/10 text-sm font-semibold text-foreground/70 transition hover:border-black/20 hover:bg-black/5 focus:outline-none focus:ring-2 focus:ring-brand-500/40"
+                    className="mt-5 h-11 w-full rounded-xl border border-black/10 text-sm font-semibold text-foreground/70 transition-all duration-200 hover:-translate-y-0.5 hover:border-black/20 hover:bg-black/5 active:translate-y-0 focus:outline-none focus:ring-2 focus:ring-brand-500/40"
                   >
                     Scan a different QR code
                   </button>
