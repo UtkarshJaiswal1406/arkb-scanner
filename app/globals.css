@@ -1,19 +1,90 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ff7122;
-  --foreground: #000000;
+  --background: #fc8019;
+  --surface: #ffffff;
+  --foreground: #282c3f;
+  --brand-400: #ff9a3d;
+  --brand-500: #fc8019;
+  --brand-600: #e8680a;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-surface: var(--surface);
   --color-foreground: var(--foreground);
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+}
+
+html {
+  color-scheme: light;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, Arial, sans-serif;
+}
+
+::selection {
+  background: rgba(252, 128, 25, 0.35);
+}
+
+/* Hide number input spinners for a cleaner amount field */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* Slim scrollbar for the history list */
+.thin-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.thin-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(252, 128, 25, 0.4);
+  border-radius: 999px;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(252, 128, 25, 0.6);
+}
+
+/* Scanner sweep line */
+@keyframes scan-sweep {
+  0% {
+    top: 8%;
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    top: 90%;
+    opacity: 0;
+  }
+}
+
+.scan-line {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  height: 2px;
+  border-radius: 999px;
+  background: #fc8019;
+  box-shadow: 0 0 10px 2px rgba(252, 128, 25, 0.6);
+  animation: scan-sweep 2.4s ease-in-out infinite;
 }

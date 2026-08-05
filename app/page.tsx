@@ -1,9 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { Scanner } from "@yudiel/react-qr-scanner";
 
 const QR_PATTERN = /^[a-zA-Z0-9]{10}$/;
+const HISTORY_PAGE_SIZE = 6;
+const DISCOUNT_OPTIONS = [7, 10] as const;
 
 const inr = (value: number) =>
   new Intl.NumberFormat("en-IN", {
@@ -12,14 +15,257 @@ const inr = (value: number) =>
     minimumFractionDigits: 2,
   }).format(value);
 
+const timeAgo = (ts: number) => {
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d ago`;
+  return new Date(ts).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+  });
+};
+
 interface HistoryEntry {
   coupon_code: string;
   discount: number;
   scanned_at: string;
 }
 
+function Alert({
+  tone,
+  children,
+}: {
+  tone: "error" | "info";
+  children: React.ReactNode;
+}) {
+  const styles = {
+    error: "border-red-200 bg-red-50 text-red-600",
+    info: "border-amber-200 bg-amber-50 text-amber-700",
+  } as const;
+  return (
+    <div role="alert" className={`rounded-xl border px-4 py-3 text-sm ${styles[tone]}`}>
+      {children}
+    </div>
+  );
+}
+
+function Section({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      className={`rounded-2xl border border-white/60 bg-white p-5 shadow-sm shadow-black/5 sm:p-6 ${className}`}
+    >
+      {children}
+    </section>
+  );
+}
+
+function HistoryPanel({
+  history,
+  loading,
+}: {
+  history: HistoryEntry[];
+  loading: boolean;
+}) {
+  const [query, setQuery] = useState("");
+  const [discountFilter, setDiscountFilter] = useState<number | "all">("all");
+  const [page, setPage] = useState(1);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const list = history.filter(
+      (h) =>
+        (q ? h.coupon_code.toLowerCase().includes(q) : true) &&
+        (discountFilter === "all" || h.discount === discountFilter)
+    );
+    return [...list].sort((a, b) => {
+      const ta = Date.parse(a.scanned_at) || 0;
+      const tb = Date.parse(b.scanned_at) || 0;
+      return tb - ta;
+    });
+  }, [history, query, discountFilter]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / HISTORY_PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const start = (safePage - 1) * HISTORY_PAGE_SIZE;
+  const visible = filtered.slice(start, start + HISTORY_PAGE_SIZE);
+
+  const resetPage = () => setPage(1);
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* Search */}
+      <div className="mb-3">
+        <label htmlFor="history-search" className="sr-only">
+          Search coupon code
+        </label>
+        <div className="relative">
+          <input
+            id="history-search"
+            type="text"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              resetPage();
+            }}
+            placeholder="Search coupon code…"
+            className="h-11 w-full rounded-xl border border-black/10 bg-white px-4 pr-16 text-sm text-foreground outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => {
+                setQuery("");
+                resetPage();
+              }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg px-2.5 py-1 text-xs font-semibold text-brand-600 transition hover:bg-brand-500/10 focus:outline-none focus:ring-2 focus:ring-brand-500/40"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Discount filter: 7% / 10% */}
+      <div
+        role="group"
+        aria-label="Filter by discount"
+        className="mb-4 grid grid-cols-3 gap-1 rounded-xl border border-black/10 bg-black/5 p-1"
+      >
+        <button
+          type="button"
+          aria-pressed={discountFilter === "all"}
+          onClick={() => {
+            setDiscountFilter("all");
+            resetPage();
+          }}
+          className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-brand-500/40 ${
+            discountFilter === "all"
+              ? "bg-white text-brand-600 shadow-sm"
+              : "text-foreground/60 hover:text-foreground"
+          }`}
+        >
+          All
+        </button>
+        {DISCOUNT_OPTIONS.map((d) => {
+          const active = discountFilter === d;
+          return (
+            <button
+              key={d}
+              type="button"
+              aria-pressed={active}
+              onClick={() => {
+                setDiscountFilter(d);
+                resetPage();
+              }}
+              className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-brand-500/40 ${
+                active
+                  ? "bg-white text-brand-600 shadow-sm"
+                  : "text-foreground/60 hover:text-foreground"
+              }`}
+            >
+              {d}%
+            </button>
+          );
+        })}
+      </div>
+
+      {/* List */}
+      <div className="thin-scrollbar min-h-0 max-h-[55vh] flex-1 overflow-y-auto pr-1 md:max-h-none">
+        {loading ? (
+          <div className="flex flex-col gap-2.5">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="h-14 w-full animate-pulse rounded-xl bg-black/5" />
+            ))}
+          </div>
+        ) : history.length === 0 ? (
+          <div className="flex flex-col items-center gap-1 rounded-xl border border-dashed border-black/15 px-4 py-10 text-center">
+            <p className="text-sm font-semibold text-foreground/70">No coupons yet</p>
+            <p className="text-xs text-foreground/50">
+              Scanned coupons will appear here.
+            </p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <p className="py-10 text-center text-sm text-foreground/50">
+            No coupons match your search.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2.5">
+            {visible.map((entry) => (
+              <li
+                key={entry.coupon_code}
+                className="flex items-center justify-between gap-3 rounded-xl border border-black/5 bg-white p-3.5 shadow-sm"
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-mono text-sm font-bold tracking-wide text-foreground">
+                    {entry.coupon_code}
+                  </p>
+                  <p className="mt-0.5 text-xs text-foreground/40">
+                    {entry.scanned_at
+                      ? timeAgo(new Date(entry.scanned_at).getTime())
+                      : "Scanned"}
+                  </p>
+                </div>
+                <span className="shrink-0 rounded-full bg-brand-500/15 px-2.5 py-1 text-xs font-bold text-brand-600">
+                  {entry.discount}%
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Footer: results + pagination */}
+      {!loading && history.length > 0 && (
+        <div className="mt-3 flex items-center justify-between gap-2 border-t border-black/10 pt-3">
+          <p aria-live="polite" className="text-xs text-foreground/50">
+            {filtered.length} result{filtered.length === 1 ? "" : "s"}
+          </p>
+          {pageCount > 1 ? (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage(safePage - 1)}
+                disabled={safePage <= 1}
+                className="rounded-lg border border-black/10 bg-white px-3 py-1.5 text-xs font-semibold text-foreground/70 transition hover:border-brand-500 hover:text-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-500/30 disabled:opacity-40"
+              >
+                Prev
+              </button>
+              <span className="text-xs text-foreground/60">
+                {safePage} / {pageCount}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage(safePage + 1)}
+                disabled={safePage >= pageCount}
+                className="rounded-lg border border-black/10 bg-white px-3 py-1.5 text-xs font-semibold text-foreground/70 transition hover:border-brand-500 hover:text-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-500/30 disabled:opacity-40"
+              >
+                Next
+              </button>
+            </div>
+          ) : (
+            <span className="text-xs text-foreground/40">All results shown</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Home() {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyOpen, setHistoryOpen] = useState(true);
   const [code, setCode] = useState<string>("");
   const [discountPercent, setDiscountPercent] = useState<number | null>(null);
   const [amount, setAmount] = useState<string>("");
@@ -28,6 +274,8 @@ export default function Home() {
   const [checking, setChecking] = useState(false);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string>("");
+  const [manualMode, setManualMode] = useState(false);
+  const [manualCode, setManualCode] = useState("");
 
   const scanningRef = useRef(false);
   const lastScannedRef = useRef("");
@@ -40,68 +288,86 @@ export default function Home() {
         setHistory(payload.coupons);
       }
     } catch {
-      // Ignore history refresh errors; the main flow should keep working.
+      /* ignore */
+    } finally {
+      setHistoryLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    refreshHistory();
+    const timer = window.setTimeout(() => void refreshHistory(), 0);
+    return () => window.clearTimeout(timer);
   }, [refreshHistory]);
+
+  const redeemCode = useCallback(async (rawValue: string) => {
+    const value = rawValue.trim();
+    if (!QR_PATTERN.test(value)) {
+      setError("Invalid code. Must be a 10-character alphanumeric value.");
+      return false;
+    }
+
+    if (scanningRef.current) return false;
+    scanningRef.current = true;
+    setError("");
+    setChecking(true);
+
+    try {
+      const response = await fetch("/api/redeem", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: value }),
+      });
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setError(payload?.error || "Could not redeem coupon.");
+        return false;
+      }
+
+      setCode(payload.coupon.coupon_code);
+      setDiscountPercent(payload.coupon.discount);
+      setIsScanned(false);
+      setAmount("");
+      setDiscountedAmount(null);
+      setManualMode(false);
+      setManualCode("");
+      return true;
+    } catch {
+      setError("Network error. Please try again.");
+      return false;
+    } finally {
+      scanningRef.current = false;
+      setChecking(false);
+    }
+  }, []);
 
   const handleScan = useCallback(
     async (detectedCodes: { rawValue: string }[]) => {
       const value = detectedCodes[0]?.rawValue?.trim();
       if (!value) return;
-
-      // The scanner fires repeatedly for the same QR; ignore duplicates.
       if (lastScannedRef.current === value) return;
       lastScannedRef.current = value;
-
-      if (!QR_PATTERN.test(value)) {
-        setError("Invalid QR code. Expected a 10-character alphanumeric value.");
-        return;
-      }
-
-      if (scanningRef.current) return;
-      scanningRef.current = true;
-      setError("");
-      setChecking(true);
-
-      try {
-        const response = await fetch("/api/redeem", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code: value }),
-        });
-        const payload = await response.json().catch(() => ({}));
-
-        if (!response.ok) {
-          setError(payload?.error || "Could not redeem coupon.");
-          return;
-        }
-
-        setCode(payload.coupon.coupon_code);
-        setDiscountPercent(payload.coupon.discount);
-        setIsScanned(false);
-        setAmount("");
-        setDiscountedAmount(null);
-      } catch {
-        setError("Network error. Please try again.");
-      } finally {
-        scanningRef.current = false;
-        setChecking(false);
-      }
+      await redeemCode(value);
     },
-    []
+    [redeemCode]
   );
 
   const handleScanError = useCallback((err: unknown) => {
     setError(
       err instanceof Error
         ? err.message
-        : "Unable to access the camera. Please allow camera permissions.",
+        : "Unable to access the camera. Please allow camera permissions."
     );
   }, []);
+
+  const handleManualSubmit = useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault();
+      lastScannedRef.current = "";
+      void redeemCode(manualCode);
+    },
+    [manualCode, redeemCode]
+  );
 
   const applyDiscount = useCallback(async () => {
     const value = parseFloat(amount);
@@ -111,7 +377,6 @@ export default function Home() {
       return;
     }
 
-    // Mark the coupon as scanned the first time the discount is applied.
     if (!isScanned) {
       setApplying(true);
       try {
@@ -141,8 +406,9 @@ export default function Home() {
     const rate = discountPercent ?? 0;
     const finalAmount = value * (1 - rate / 100);
     setDiscountedAmount(finalAmount);
+
     await refreshHistory();
-  }, [amount, code, discountPercent, isScanned]);
+  }, [amount, code, discountPercent, isScanned, refreshHistory]);
 
   const reset = useCallback(() => {
     setCode("");
@@ -151,136 +417,225 @@ export default function Home() {
     setDiscountedAmount(null);
     setIsScanned(false);
     setError("");
+    setManualMode(false);
+    setManualCode("");
     lastScannedRef.current = "";
   }, []);
 
+  const saved =
+    discountedAmount !== null ? (parseFloat(amount) || 0) - discountedAmount : 0;
+
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col items-start gap-8 px-4 py-8 lg:flex-row lg:justify-center">
-      <div className="flex w-full max-w-md flex-col items-center gap-5">
-      <h1 className="text-3xl font-bold">QR Discount Scanner</h1>
+    <main className="min-h-screen bg-background text-foreground md:h-screen md:overflow-hidden">
+      <div className="mx-auto flex h-full min-h-screen w-full max-w-5xl flex-col px-4 py-6 sm:px-6 md:py-8 lg:px-8 lg:py-10">
+        {/* Header */}
+        <header className="flex shrink-0 items-center justify-center pb-6 md:pb-8 lg:pb-10">
+          <Image
+            src="/icon.png"
+            alt="ARKB"
+            width={192}
+            height={60}
+            priority
+            className="h-12 w-auto sm:h-14"
+          />
+        </header>
 
-      {!code ? (
-        <section className="w-full rounded-2xl bg-white/90 p-5 shadow-lg">
-          <h2 className="mb-2 text-center font-semibold">
-            Scan a QR code using your camera
-          </h2>
-          <div className="overflow-hidden rounded-xl bg-black">
-            <Scanner
-              onScan={handleScan}
-              onError={handleScanError}
-              constraints={{ facingMode: "environment" }}
-            />
-          </div>
-          {error && <p className="mt-3 text-center text-sm font-medium text-red-600">{error}</p>}
-        </section>
-      ) : (
-        <section className="flex w-full flex-col items-center gap-4 rounded-2xl bg-white/90 p-5 shadow-lg">
-          <div className="w-full rounded-xl border border-black/10 bg-white p-4 text-center">
-            <p className="text-sm font-medium text-black/60">Coupon code:</p>
-            <p className="mt-1 break-all font-mono text-xl font-semibold text-black">
-              {code}
-            </p>
-            {discountPercent !== null && (
-              <p className="mt-2 inline-block rounded-full bg-green-600/10 px-3 py-1 text-sm font-semibold text-green-700">
-                {discountPercent}% discount
-              </p>
-            )}
-          </div>
-
-          <label className="w-full">
-            <span className="mb-1 block text-sm font-semibold">Order amount (INR)</span>
-            <input
-              type="number"
-              inputMode="decimal"
-              min="0"
-              step="0.01"
-              value={amount}
-              onChange={(e) => {
-                setAmount(e.target.value);
-                setDiscountedAmount(null);
-              }}
-              placeholder="e.g. 1000"
-              className="w-full rounded-xl border border-black/20 bg-white px-4 py-3 text-lg text-black outline-none transition focus:border-black focus:ring-2 focus:ring-black/10"
-            />
-          </label>
-
-          <button
-            type="button"
-            onClick={applyDiscount}
-            disabled={applying}
-            className="w-full rounded-xl bg-black px-4 py-3 text-lg font-semibold text-white shadow transition hover:bg-black/80 active:scale-[0.98] disabled:opacity-60"
-          >
-            {applying ? "Applying discount..." : "Apply discount"}
-          </button>
-
-          {discountedAmount !== null && discountPercent !== null && (
-            <div className="my-2 w-full rounded-xl border-2 border-green-600/30 bg-green-50 p-4 text-center">
-              <p className="text-sm font-semibold text-green-700">
-                {discountPercent}% discount applied
-              </p>
-              <p className="text-3xl font-bold text-green-600">
-                {inr(discountedAmount)}
-              </p>
-              <p className="mt-1 text-xs font-medium text-black/50">
-                You saved {inr((parseFloat(amount) || 0) - discountedAmount)}
-              </p>
-            </div>
-          )}
-
-          {checking && (
-            <p className="text-sm font-medium text-black/60">Redeeming coupon...</p>
-          )}
-
-          {error && <p className="text-sm font-medium text-red-600">{error}</p>}
-
-          <button
-            type="button"
-            onClick={reset}
-            className="text-sm font-medium text-black/60 underline transition hover:text-black"
-          >
-            Scan a different QR code
-          </button>
-        </section>
-      )}
-      </div>
-
-      <aside className="w-full max-w-md shrink-0 rounded-2xl bg-white/90 p-5 shadow-lg lg:sticky lg:top-8 lg:w-80">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Scanned history</h2>
-          <span className="rounded-full bg-black/5 px-2 py-0.5 text-xs font-semibold text-black/50">
-            {history.length}
-          </span>
-        </div>
-
-        {history.length === 0 ? (
-          <p className="text-sm font-medium text-black/50">
-            No coupons scanned yet. Scan a QR code to see the history here.
-          </p>
-        ) : (
-          <ul className="flex max-h-[70vh] flex-col gap-3 overflow-y-auto pr-1">
-            {history.map((entry) => (
-              <li
-                key={entry.coupon_code}
-                className="rounded-xl border border-black/10 bg-white p-3"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="break-all font-mono text-sm font-semibold text-black">
-                    {entry.coupon_code}
-                  </p>
-                  <span className="shrink-0 rounded-full bg-green-600/10 px-2 py-0.5 text-xs font-semibold text-green-700">
-                    {entry.discount}% off
-                  </span>
+        <div className="grid min-h-0 flex-1 gap-5 md:grid-cols-[minmax(0,1fr)_340px] md:gap-8">
+          {/* Left — checkout flow */}
+          <section className="mx-auto flex min-h-0 w-full max-w-xl flex-col justify-center md:h-full">
+            {!code ? (
+              <Section className="flex min-h-0 flex-col md:flex-1">
+                <h2 className="mb-4 shrink-0 text-lg font-bold">Scan a coupon</h2>
+                <div className="relative aspect-square min-h-0 w-full overflow-hidden rounded-2xl bg-black md:aspect-auto md:flex-1">
+                  <Scanner
+                    onScan={handleScan}
+                    onError={handleScanError}
+                    constraints={{ facingMode: "environment" }}
+                    components={{ finder: false, torch: true }}
+                    classNames={{
+                      container: "h-full w-full",
+                      video: "h-full w-full object-cover",
+                    }}
+                  >
+                    <div className="pointer-events-none absolute inset-3">
+                      <div className="absolute left-0 top-0 h-10 w-10 rounded-tl-2xl border-l-2 border-t-2 border-white/80" />
+                      <div className="absolute right-0 top-0 h-10 w-10 rounded-tr-2xl border-r-2 border-t-2 border-white/80" />
+                      <div className="absolute bottom-0 left-0 h-10 w-10 rounded-bl-2xl border-b-2 border-l-2 border-white/80" />
+                      <div className="absolute bottom-0 right-0 h-10 w-10 rounded-br-2xl border-b-2 border-r-2 border-white/80" />
+                    </div>
+                    <div className="pointer-events-none absolute inset-x-0">
+                      <span className="scan-line" />
+                    </div>
+                  </Scanner>
                 </div>
-                <p className="mt-2 text-xs font-medium text-black/50">
-                  {entry.scanned_at
-                    ? new Date(entry.scanned_at).toLocaleString()
-                    : "Scanned"}
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </aside>
+
+                {checking && (
+                  <p className="mt-4 shrink-0 text-sm font-medium text-foreground/60">
+                    Checking coupon…
+                  </p>
+                )}
+                {error && !checking && (
+                  <div className="mt-4 shrink-0">
+                    <Alert tone="error">{error}</Alert>
+                  </div>
+                )}
+
+                <div className="mt-5 shrink-0 border-t border-black/10 pt-5">
+                  <button
+                    type="button"
+                    onClick={() => setManualMode((m) => !m)}
+                    className="text-sm font-semibold text-brand-600 underline-offset-4 transition hover:underline focus:outline-none focus:ring-2 focus:ring-brand-500/40 rounded"
+                  >
+                    {manualMode ? "Hide manual entry" : "Enter the code manually"}
+                  </button>
+
+                  {manualMode && (
+                    <form onSubmit={handleManualSubmit} className="mt-3 flex gap-2">
+                      <input
+                        value={manualCode}
+                        onChange={(e) =>
+                          setManualCode(e.target.value.toUpperCase().slice(0, 10))
+                        }
+                        placeholder="AB12CD34EF"
+                        maxLength={10}
+                        autoFocus
+                        aria-label="Coupon code"
+                        className="h-11 w-full rounded-xl border border-black/10 bg-white px-4 font-mono text-sm font-bold uppercase tracking-widest text-foreground outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30"
+                      />
+                      <button
+                        type="submit"
+                        disabled={manualCode.length !== 10}
+                        className="shrink-0 rounded-xl bg-brand-500 px-5 text-sm font-bold text-white transition hover:bg-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-500/50 disabled:opacity-40"
+                      >
+                        Check
+                      </button>
+                    </form>
+                  )}
+                </div>
+              </Section>
+            ) : (
+              <div className="flex flex-col gap-5">
+                <Section>
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs font-medium text-foreground/50">Coupon code</p>
+                    {discountPercent !== null && (
+                      <span className="rounded-full bg-brand-500/15 px-3 py-1 text-xs font-bold text-brand-600">
+                        {discountPercent}% off
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-2 break-all font-mono text-2xl font-bold tracking-widest text-foreground">
+                    {code}
+                  </p>
+                  <p className="mt-3 text-sm text-foreground/60">
+                    {isScanned ? "Applied" : "Not yet applied"}
+                  </p>
+                </Section>
+
+                <Section>
+                  <label
+                    htmlFor="order-amount"
+                    className="mb-2 block text-sm font-semibold"
+                  >
+                    Order amount <span className="text-foreground/40">(INR)</span>
+                  </label>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-lg font-bold text-foreground/40">
+                      ₹
+                    </span>
+                    <input
+                      id="order-amount"
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      step="0.01"
+                      value={amount}
+                      onChange={(e) => {
+                        setAmount(e.target.value);
+                        setDiscountedAmount(null);
+                      }}
+                      placeholder="0"
+                      autoFocus
+                      className="h-12 w-full rounded-xl border border-black/10 bg-white py-3 pl-10 pr-4 text-lg font-semibold text-foreground outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={applyDiscount}
+                    disabled={applying || !amount}
+                    className="mt-4 flex h-12 w-full items-center justify-center rounded-xl bg-brand-500 text-base font-bold text-white transition hover:bg-brand-600 active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-brand-500/50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {applying ? "Applying discount…" : "Apply discount"}
+                  </button>
+
+                  {discountedAmount !== null && discountPercent !== null && (
+                    <div className="mt-5 rounded-xl border border-brand-500/30 bg-brand-500/5 p-5 text-center">
+                      <p className="text-xs font-bold uppercase tracking-widest text-brand-600">
+                        {discountPercent}% discount applied
+                      </p>
+                      <p className="mt-2 text-4xl font-extrabold tracking-tight text-foreground">
+                        {inr(discountedAmount)}
+                      </p>
+                      <div className="mt-2 text-sm text-foreground/50">
+                        <span className="line-through">
+                          {inr(parseFloat(amount) || 0)}
+                        </span>{" "}
+                        → <span className="font-semibold text-foreground">{inr(discountedAmount)}</span>
+                      </div>
+                      <p className="mt-3 inline-block rounded-full bg-brand-500/15 px-3 py-1 text-xs font-bold text-brand-600">
+                        You saved {inr(saved)}
+                      </p>
+                    </div>
+                  )}
+
+                  {error && (
+                    <div className="mt-4">
+                      <Alert tone="error">{error}</Alert>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={reset}
+                    className="mt-5 h-11 w-full rounded-xl border border-black/10 text-sm font-semibold text-foreground/70 transition hover:border-black/20 hover:bg-black/5 focus:outline-none focus:ring-2 focus:ring-brand-500/40"
+                  >
+                    Scan a different QR code
+                  </button>
+                </Section>
+              </div>
+            )}
+          </section>
+
+          {/* Right — history (desktop / tablet: md+) */}
+          <aside className="hidden min-h-0 flex-col rounded-2xl border border-white/60 bg-white p-5 shadow-sm shadow-black/5 md:flex md:h-full md:overflow-hidden">
+            <h2 className="mb-4 shrink-0 text-lg font-bold">Scanned history</h2>
+            <HistoryPanel history={history} loading={historyLoading} />
+          </aside>
+
+          {/* Mobile history (below md) */}
+          <div className="min-h-0 md:hidden">
+            <Section>
+              <button
+                type="button"
+                onClick={() => setHistoryOpen((o) => !o)}
+                aria-expanded={historyOpen}
+                className="flex w-full items-center justify-between gap-2 focus:outline-none focus:ring-2 focus:ring-brand-500/40 rounded"
+              >
+                <span className="text-lg font-bold">Scanned history</span>
+                <span className="text-sm font-semibold text-brand-600">
+                  {historyOpen ? "Hide" : "Show"}
+                </span>
+              </button>
+              {historyOpen && (
+                <div className="mt-4">
+                  <HistoryPanel history={history} loading={historyLoading} />
+                </div>
+              )}
+            </Section>
+          </div>
+        </div>
+      </div>
     </main>
   );
 }
