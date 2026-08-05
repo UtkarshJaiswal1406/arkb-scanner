@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Scanner } from "@yudiel/react-qr-scanner";
 
 const QR_PATTERN = /^[a-zA-Z0-9]{10}$/;
@@ -13,12 +13,9 @@ const inr = (value: number) =>
   }).format(value);
 
 interface HistoryEntry {
-  id: string;
-  code: string;
+  coupon_code: string;
   discount: number;
-  amount: number;
-  discountedAmount: number;
-  scannedAt: number;
+  scanned_at: string;
 }
 
 export default function Home() {
@@ -34,6 +31,22 @@ export default function Home() {
 
   const scanningRef = useRef(false);
   const lastScannedRef = useRef("");
+
+  const refreshHistory = useCallback(async () => {
+    try {
+      const response = await fetch("/api/coupons");
+      const payload = await response.json().catch(() => ({}));
+      if (response.ok && Array.isArray(payload?.coupons)) {
+        setHistory(payload.coupons);
+      }
+    } catch {
+      // Ignore history refresh errors; the main flow should keep working.
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshHistory();
+  }, [refreshHistory]);
 
   const handleScan = useCallback(
     async (detectedCodes: { rawValue: string }[]) => {
@@ -128,21 +141,7 @@ export default function Home() {
     const rate = discountPercent ?? 0;
     const finalAmount = value * (1 - rate / 100);
     setDiscountedAmount(finalAmount);
-
-    const now = Date.now();
-    setHistory((prev) =>
-      [
-        {
-          id: `${code}-${now}`,
-          code: code || "unknown",
-          discount: rate,
-          amount: value,
-          discountedAmount: finalAmount,
-          scannedAt: now,
-        },
-        ...prev,
-      ].slice(0, 50)
-    );
+    await refreshHistory();
   }, [amount, code, discountPercent, isScanned]);
 
   const reset = useCallback(() => {
@@ -261,33 +260,22 @@ export default function Home() {
           <ul className="flex max-h-[70vh] flex-col gap-3 overflow-y-auto pr-1">
             {history.map((entry) => (
               <li
-                key={entry.id}
+                key={entry.coupon_code}
                 className="rounded-xl border border-black/10 bg-white p-3"
               >
                 <div className="flex items-center justify-between gap-2">
                   <p className="break-all font-mono text-sm font-semibold text-black">
-                    {entry.code}
+                    {entry.coupon_code}
                   </p>
                   <span className="shrink-0 rounded-full bg-green-600/10 px-2 py-0.5 text-xs font-semibold text-green-700">
                     {entry.discount}% off
                   </span>
                 </div>
-                <div className="mt-2 flex items-end justify-between gap-2">
-                  <div className="text-xs font-medium text-black/50">
-                    <p>
-                      {inr(entry.amount)}{" "}
-                      <span className="line-through text-black/30">
-                        → {inr(entry.discountedAmount)}
-                      </span>
-                    </p>
-                    <p className="mt-0.5">
-                      {new Date(entry.scannedAt).toLocaleString()}
-                    </p>
-                  </div>
-                  <p className="text-base font-bold text-green-600">
-                    {inr(entry.discountedAmount)}
-                  </p>
-                </div>
+                <p className="mt-2 text-xs font-medium text-black/50">
+                  {entry.scanned_at
+                    ? new Date(entry.scanned_at).toLocaleString()
+                    : "Scanned"}
+                </p>
               </li>
             ))}
           </ul>

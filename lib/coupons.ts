@@ -48,6 +48,19 @@ export type RedeemResult =
   | { ok: true; coupon: CouponRow }
   | { ok: false; reason: "not_found" | "already_used" };
 
+// Returns all coupons that have been scanned, most recently scanned first.
+export async function listScannedCoupons(limit = 100): Promise<CouponRow[]> {
+  const { data, error } = await supabase
+    .from("coupons")
+    .select("*")
+    .eq("status", "scanned")
+    .order("scanned_at", { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+  return (data ?? []) as CouponRow[];
+}
+
 // Marks an unscanned coupon as scanned (atomically, guarded against double
 // scans). Should be called only when the discount is actually applied.
 export async function redeemCoupon(code: string): Promise<RedeemResult> {
