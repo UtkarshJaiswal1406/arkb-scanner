@@ -485,6 +485,7 @@ export default function Home() {
                   onError={handleScanError}
                   constraints={{ facingMode: "environment" }}
                   components={{ finder: false, torch: true }}
+                  allowMultiple
                   classNames={{
                     container: "h-full w-full",
                     video: "h-full w-full object-cover",
